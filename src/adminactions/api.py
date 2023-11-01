@@ -17,12 +17,8 @@ from django.utils.timezone import get_default_timezone
 
 from adminactions import utils
 
-from .utils import (
-    clone_instance,
-    get_field_by_path,
-    get_field_value,
-    get_ignored_fields,
-)
+from .utils import (clone_instance, get_field_by_path, get_field_value,
+                    get_ignored_fields,)
 
 csv_options_default = {
     "date_format": "d/m/Y",
@@ -172,9 +168,9 @@ def export_as_csv(  # noqa: max-complexity: 20
             )
 
         response = response_class(content_type="text/csv")
-        response["Content-Disposition"] = (f'attachment;filename="{filename}"').encode(
-            "us-ascii", "replace"
-        )
+        response["Content-Disposition"] = (
+            'attachment;filename="%s"' % filename
+        ).encode("us-ascii", "replace")
     else:
         response = out
 
@@ -316,9 +312,9 @@ def export_as_xls2(  # noqa: max-complexity: 24
             )
 
         response = HttpResponse(content_type="application/vnd.ms-excel")
-        response["Content-Disposition"] = (f'attachment;filename="{filename}"').encode(
-            "us-ascii", "replace"
-        )
+        response["Content-Disposition"] = (
+            'attachment;filename="%s"' % filename
+        ).encode("us-ascii", "replace")
     else:
         response = out
 

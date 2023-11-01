@@ -3,12 +3,6 @@ from pathlib import Path
 from unittest import skipIf
 from unittest.mock import patch
 
-from demo.models import (
-    DemoModel,
-    DemoModelAdmin,
-    DemoModelMassUpdateForm,
-    TestMassUpdateForm,
-)
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db.models import fields
@@ -23,6 +17,8 @@ from webtest import Upload
 from adminactions import config
 from adminactions.compat import celery_present
 from adminactions.mass_update import OPERATIONS
+from demo.models import (DemoModel, DemoModelAdmin, DemoModelMassUpdateForm,
+                         TestMassUpdateForm,)
 
 __all__ = [
     "MassUpdateTest",

@@ -13,8 +13,7 @@ from django.utils.encoding import smart_str
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 
-from . import api
-from . import compat as transaction
+from . import api, compat as transaction
 from .forms import GenericActionForm
 from .perms import get_permission_codename
 from .signals import adminaction_end, adminaction_requested, adminaction_start
@@ -83,7 +82,9 @@ def merge(modeladmin, request, queryset):  # noqa
     """
 
     opts = modeladmin.model._meta
-    perm = f"{opts.app_label}.{get_permission_codename(merge.base_permission, opts)}"
+    perm = "{0}.{1}".format(
+        opts.app_label, get_permission_codename(merge.base_permission, opts)
+    )
     if not request.user.has_perm(perm):
         messages.error(
             request, _("Sorry you do not have rights to execute this action")

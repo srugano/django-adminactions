@@ -1,14 +1,14 @@
+import codecs
 import csv
 import logging
-import os
-import tempfile
 from pathlib import Path
 from typing import Dict, Optional, Sequence
 
 from django import forms
 from django.contrib import messages
 from django.contrib.admin import helpers
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import ValidationError
+from django.core.files.utils import FileProxyMixin
 from django.core.validators import FileExtensionValidator
 from django.db.transaction import atomic
 from django.forms import Media
@@ -21,11 +21,8 @@ from django.utils.translation import gettext as _
 from adminactions.exceptions import ActionInterrupted
 from adminactions.forms import CSVConfigForm
 from adminactions.perms import get_permission_codename
-from adminactions.signals import (
-    adminaction_end,
-    adminaction_requested,
-    adminaction_start,
-)
+from adminactions.signals import (adminaction_end, adminaction_requested,
+                                  adminaction_start,)
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +38,11 @@ class BulkUpdateForm(forms.Form):
     action = forms.CharField(
         label="", required=True, initial="", widget=forms.HiddenInput()
     )
-
-    _async = forms.BooleanField(
-        label="Async",
-        required=False,
-        help_text=_("use Celery to run update in background"),
+    _file = forms.FileField(
+        label="CSV File",
+        required=True,
+        help_text=_("CSV file"),
+        validators=[FileExtensionValidator(allowed_extensions=["csv", "txt"])],
     )
     _clean = forms.BooleanField(
         label="Clean()", required=False, help_text=_("if checked calls obj.clean()")
@@ -56,21 +53,19 @@ class BulkUpdateForm(forms.Form):
         required=False,
         help_text=_("if checked use obj.save() instead of manager.bulk_update()"),
     )
-
-    _date_format = forms.CharField(
-        label="Date format", required=True, help_text=_("Date format")
-    )
-    _file = forms.FileField(
-        label="CSV File",
-        required=True,
-        help_text=_("CSV file"),
-        validators=[FileExtensionValidator(allowed_extensions=["csv", "txt"])],
+    _dry_run = forms.BooleanField(
+        label="DryRun",
+        required=False,
+        help_text="Do not perform updates, just display results",
     )
 
     @property
     def media(self):
         """Return all media required to render the widgets on this form."""
-        media = Media(js=["adminactions/js/bulkupdate.js"])
+        media = Media(
+            js=["adminactions/js/bulkupdate.js"],
+            css={"all": ["adminactions/css/bulkupdate.css"]},
+        )
         for field in self.fields.values():
             media = media + field.widget.media
         return media
@@ -121,7 +116,7 @@ class BulkUpdateMappingForm(forms.Form):
 def bulk_update(modeladmin, request, queryset):  # noqa
     try:
         opts = modeladmin.model._meta
-        perm = "{}.{}".format(
+        perm = "{0}.{1}".format(
             opts.app_label, get_permission_codename(bulk_update.base_permission, opts)
         )
         bulk_update_form = getattr(modeladmin, "bulk_update_form", BulkUpdateForm)
@@ -154,6 +149,7 @@ def bulk_update(modeladmin, request, queryset):  # noqa
         form_initial = {
             "_selected_action": request.POST.getlist(helpers.ACTION_CHECKBOX_NAME),
             "_date_format": "%Y-%m-%d",
+            "_dry_run": False,
             "select_across": request.POST.get("select_across") == "1",
             "action": "bulk_update",
         }
@@ -174,22 +170,19 @@ def bulk_update(modeladmin, request, queryset):  # noqa
             if form.is_valid() and csv_form.is_valid() and map_form.is_valid():
                 header = csv_form.cleaned_data.pop("header")
                 csv_options = csv_form.cleaned_data
-                # validate = form.cleaned_data.get("_validate", False)
                 clean = form.cleaned_data.get("_clean", False)
-                # use_celery = form.cleaned_data.get("_async", False)
+                dry_run = form.cleaned_data.get("_dry_run", False)
                 try:
                     f = form.cleaned_data.pop("_file")
-                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-                    temp_file.write(f.read())
-                    temp_file.close()
                     res = _bulk_update(
                         queryset,
-                        temp_file.name,
+                        f,
                         mapping=map_form.get_mapping(),
                         header=header,
                         clean=clean,
                         indexes=map_form.cleaned_data["index_field"],
                         csv_options=csv_options,
+                        dry_run=dry_run,
                     )
                     c = len(res["updated"])
                     messages.info(request, _("Updated %s records") % c)
@@ -205,9 +198,19 @@ def bulk_update(modeladmin, request, queryset):  # noqa
                     messages.error(request, f"{e.__class__.__name__}: {e}")
                     return HttpResponseRedirect(request.get_full_path())
                 else:
-                    return HttpResponseRedirect(request.get_full_path())
-                finally:
-                    os.unlink(temp_file.name)
+                    return render(
+                        request,
+                        "adminactions/bulk_update_results.html",
+                        context={
+                            "results": res,
+                            "dry_run": dry_run,
+                            "media": Media(
+                                css={"all": ["adminactions/css/bulkupdate.css"]}
+                            ),
+                            "action_short_description": bulk_update.short_description,
+                            "opts": queryset.model._meta,
+                        },
+                    )
         else:
             form = bulk_update_form(initial=form_initial)
             csv_form = CSVConfigForm(initial=csv_initial, prefix="csv")
@@ -253,7 +256,7 @@ bulk_update.base_permission = "adminactions_bulkupdate"
 
 def _bulk_update(  # noqa: max-complexity: 18
     queryset,
-    filename,
+    file_name_or_object,
     *,
     mapping: Dict,
     indexes: Sequence[str],
@@ -261,68 +264,65 @@ def _bulk_update(  # noqa: max-complexity: 18
     header: bool = True,
     csv_options: Optional[Dict] = None,
     request=None,
+    dry_run: bool = False,
 ):
     results = {
         "updated": [],
         "errors": [],
         "missing": [],
         "duplicates": [],
+        "changes": {},
     }
     adminaction_start.send(
         sender=queryset.model, action="bulk_update", request=request, queryset=queryset
     )
     try:
-        with Path(filename).open("r") as f:
-            if header:
-                reader = csv.DictReader(
-                    f.readlines(), skipinitialspace=True, **(csv_options or {})
-                )
-                for _k, v in mapping.items():
-                    if v not in reader.fieldnames:
-                        raise ValidationError(
-                            _("%s column is not present in the file") % v
-                        )
-            else:
-                reader = csv.reader(f.readlines(), **(csv_options or {}))
-                mapping = {k: int(v) - 1 for k, v in mapping.items()}
+        if isinstance(file_name_or_object, FileProxyMixin):
+            f = file_name_or_object
+        else:
+            f = Path(file_name_or_object).open("rb")
 
-            reverse = {v: k for k, v in mapping.items()}
-            with atomic():
-                for row in reader:
-                    key = {k: row[mapping[k]] for k in indexes}
-                    try:
-                        obj = queryset.get(**key)
-                        if header:
-                            for colname, value in row.items():
-                                field = reverse[colname]
+        if header:
+            reader = csv.DictReader(
+                codecs.iterdecode(f, "utf-8"), **(csv_options or {})
+            )
+            for k, v in mapping.items():
+                if v not in reader.fieldnames:
+                    raise ValidationError(_("%s column is not present in the file") % v)
+        else:
+            reader = csv.reader(codecs.iterdecode(f, "utf-8"), **(csv_options or {}))
+            mapping = {k: int(v) - 1 for k, v in mapping.items()}
+
+        reverse = {v: k for k, v in mapping.items()}
+        with atomic():
+            for i, row in enumerate(reader, 1):
+                key = {k: row[mapping[k]] for k in indexes}
+                try:
+                    obj = queryset.get(**key)
+                    changes = {}
+                    if header:
+                        for colname, value in row.items():
+                            field = reverse[colname]
+                            if field not in indexes:
+                                changes[field] = [getattr(obj, field), value]
+                                setattr(obj, field, value)
+                    else:
+                        for i, value in enumerate(row):
+                            if i in reverse.keys():
+                                field = reverse[i]
                                 if field not in indexes:
-                                    model_field = queryset.model._meta.get_field(field)
-                                    if (
-                                        model_field.is_relation
-                                        and model_field.many_to_one
-                                    ):
-                                        related_model = model_field.related_model
-                                        try:
-                                            value = related_model.objects.get(pk=value)
-                                        except ObjectDoesNotExist:
-                                            raise ValidationError(
-                                                f"No {related_model._meta.verbose_name} found with id {value}"
-                                            )
+                                    changes[field] = [getattr(obj, field), value]
                                     setattr(obj, field, value)
-                        else:
-                            for i, value in enumerate(row):
-                                if i in reverse.keys():
-                                    field = reverse[i]
-                                    if field not in indexes:
-                                        setattr(obj, field, value)
-                        if clean:
-                            obj.clean()
+                    results["changes"][str(key)] = changes
+                    if clean:
+                        obj.clean()
+                    if not dry_run:
                         obj.save()
-                        results["updated"].append(key)
-                    except queryset.model.DoesNotExist:
-                        results["missing"].append(key)
-                    except queryset.model.MultipleObjectsReturned:
-                        results["duplicates"].append(key)
+                    results["updated"].append(key)
+                except queryset.model.DoesNotExist:
+                    results["missing"].append(key)
+                except queryset.model.MultipleObjectsReturned:
+                    results["duplicates"].append(key)
         adminaction_end.send(
             sender=queryset.model,
             action="bulk_update",

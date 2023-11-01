@@ -1,7 +1,6 @@
 import logging
 import re
-from collections import OrderedDict as SortedDict
-from collections import defaultdict
+from collections import OrderedDict as SortedDict, defaultdict
 
 from django import forms
 from django.conf import settings
@@ -9,16 +8,12 @@ from django.contrib import messages
 from django.contrib.admin import helpers
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.core.files import File
-from django.db.models import FileField, ForeignKey
-from django.db.models import fields as df
+from django.db.models import FileField, ForeignKey, fields as df
 from django.db.transaction import atomic
 from django.forms import fields as ff
-from django.forms.models import (
-    InlineForeignKeyField,
-    ModelMultipleChoiceField,
-    construct_instance,
-    modelform_factory,
-)
+from django.forms.models import (InlineForeignKeyField,
+                                 ModelMultipleChoiceField, construct_instance,
+                                 modelform_factory,)
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.encoding import smart_str
@@ -224,7 +219,7 @@ class MassUpdateForm(GenericActionForm):
             if not self.update_using_queryset_allowed:
                 self.add_error(None, "Cannot use operators without 'validate'")
             else:
-                for field_name, _value in list(self.cleaned_data.items()):
+                for field_name, value in list(self.cleaned_data.items()):
                     if isinstance(
                         self.fields.get(field_name, ""), ModelMultipleChoiceField
                     ):
@@ -416,7 +411,7 @@ def mass_update(modeladmin, request, queryset):  # noqa
         return grouped
 
     opts = modeladmin.model._meta
-    perm = "{}.{}".format(
+    perm = "{0}.{1}".format(
         opts.app_label, get_permission_codename(mass_update.base_permission, opts)
     )
     if not request.user.has_perm(perm):

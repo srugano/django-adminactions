@@ -1,4 +1,3 @@
-from demo.models import DemoModel
 from django.contrib.admin.options import ModelAdmin
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
@@ -9,6 +8,7 @@ from django_webtest import WebTestMixin
 from utils import SelectRowsMixin, user_grant_permission
 
 from adminactions.byrows_update import byrows_update_get_fields
+from demo.models import DemoModel
 
 
 class MockRequest:

@@ -10,12 +10,8 @@ from django.test.utils import override_settings
 from django.utils.encoding import smart_str
 from django_dynamic_fixture import G
 from django_webtest import WebTest
-from utils import (
-    CheckSignalsMixin,
-    SelectRowsMixin,
-    admin_register,
-    user_grant_permission,
-)
+from utils import (CheckSignalsMixin, SelectRowsMixin, admin_register,
+                   user_grant_permission,)
 
 __all__ = [
     "ExportAsCsvTest",
@@ -440,7 +436,9 @@ class ExportAsXlsTest(ExportMixin, SelectRowsMixin, CheckSignalsMixin, WebTest):
         # generate 3k users
         start = time.time()
         user_count = User.objects.count()
-        User.objects.bulk_create([User(username=f"bulk_user_{i}") for i in range(3000)])
+        User.objects.bulk_create(
+            [User(username="bulk_user_%s" % i) for i in range(3000)]
+        )
         # print('created 3k users in %.1f seconds' % (time.time() - start))
         self.assertEqual(User.objects.count(), 3000 + user_count)
 

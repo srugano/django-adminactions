@@ -13,8 +13,8 @@ from django.shortcuts import render
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
-from .api import export_as_csv as _export_as_csv
-from .api import export_as_xls as _export_as_xls
+from .api import (export_as_csv as _export_as_csv,
+                  export_as_xls as _export_as_xls,)
 from .exceptions import ActionInterrupted
 from .forms import CSVOptions, FixtureOptions, XLSOptions
 from .perms import get_permission_codename
@@ -46,7 +46,7 @@ def base_export(
     export a queryset to csv file
     """
     opts = modeladmin.model._meta
-    perm = "{}.{}".format(
+    perm = "{0}.{1}".format(
         opts.app_label, get_permission_codename(base_export.base_permission, opts)
     )
     if not request.user.has_perm(perm):
@@ -267,9 +267,9 @@ def _dump_qs(form, queryset, data, filename):
             queryset.model._meta.verbose_name_plural.lower().replace(" ", "_"),
             fmt,
         )
-        response["Content-Disposition"] = (f'attachment;filename="{filename}"').encode(
-            "us-ascii", "replace"
-        )
+        response["Content-Disposition"] = (
+            'attachment;filename="%s"' % filename
+        ).encode("us-ascii", "replace")
     response.content = ret
     return response
 
@@ -283,7 +283,7 @@ def export_as_fixture(modeladmin, request, queryset):
         "indent": 4,
     }
     opts = modeladmin.model._meta
-    perm = "{}.{}".format(
+    perm = "{0}.{1}".format(
         opts.app_label, get_permission_codename(export_as_fixture.base_permission, opts)
     )
     if not request.user.has_perm(perm):

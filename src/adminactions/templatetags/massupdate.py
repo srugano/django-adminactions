@@ -60,7 +60,9 @@ def checkbox_enabler(context, field):
     if form.is_bound:
         chk = form.cleaned_data.get(name, False)
         checked = {True: 'checked="checked"', False: ""}[chk]
-    return mark_safe(f'<input type="checkbox" name="{name}" {checked} class="enabler">')
+    return mark_safe(
+        '<input type="checkbox" name="%s" %s class="enabler">' % (name, checked)
+    )
 
 
 @register.simple_tag(takes_context=True)
@@ -77,7 +79,7 @@ def field_function(context, model, form_field):
     if form.is_bound:
         value = form.cleaned_data.get(f"func_id_{form_field.name}", "")
 
-    for label, (__, param, _enabler, __) in list(
+    for label, (__, param, enabler, __) in list(
         OPERATIONS.get_for_field(model_field).items()
     ):
         options_attrs[label] = {"class": classes[param], "label": label}

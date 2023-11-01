@@ -5,8 +5,7 @@ import json
 import os
 import re
 
-from sphinx import __version__ as sphinx_ver
-from sphinx import addnodes
+from sphinx import __version__ as sphinx_ver, addnodes
 from sphinx.builders.html import StandaloneHTMLBuilder
 from sphinx.util.compat import Directive
 from sphinx.util.console import bold
@@ -202,12 +201,12 @@ class DjangoStandaloneHTMLBuilder(StandaloneHTMLBuilder):
             "ttags": [
                 n
                 for ((t, n), (l, a)) in xrefs.items()
-                if t == "templatetag" and l == "ref/templates/builtins"
-            ],
+                if t == "templatetag" and l == "ref/templates/builtins"  # noqa: E741
+            ],  # noqa: E741
             "tfilters": [
                 n
-                for ((t, n), (l, a)) in xrefs.items()
-                if t == "templatefilter" and l == "ref/templates/builtins"
+                for ((t, n), (l, a)) in xrefs.items()  # noqa: E741
+                if t == "templatefilter" and l == "ref/templates/builtins"  # noqa: E741
             ],
         }
         outfilename = os.path.join(self.outdir, "templatebuiltins.js")
